@@ -17,7 +17,6 @@ import Footer from "./components/Footer";
 import Header from "./components/Header";
 import ImagePreview from "./components/ImagePreview";
 import UploadProgress from "./components/UploadProgress";
-import { logout } from "./services/authService";
 import { uploadToGoogleDrive } from "./services/fileService";
 
 // Define the steps of our form upload process
@@ -454,21 +453,6 @@ function App() {
                 <div className="flex flex-col space-y-2">
                   <Button onClick={goToNextStep} variant="default" size="lg">
                     Submit Another Form
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      logout();
-                      setCurrentStep("instructions");
-                      setImages([]);
-                      setAudioNote(null);
-                      setUploadResult(null);
-                    }}
-                    className="mt-4"
-                  >
-                    Sign Out
                   </Button>
                 </div>
               </div>

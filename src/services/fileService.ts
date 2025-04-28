@@ -58,10 +58,7 @@ export async function uploadToGoogleDrive(
       success: true,
       folderPath:
         result.folderPath ||
-        `/Form Submissions/${new Date()
-          .toISOString()
-          .slice(0, 19)
-          .replace(/:/g, "-")}/`,
+        `${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}/`,
     };
   } catch (error) {
     console.error("Error uploading to Google Drive:", error);
