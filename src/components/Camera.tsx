@@ -15,30 +15,145 @@ function Camera({ onCapture, onClose }: CameraProps) {
   const [facingMode, setFacingMode] = useState<"environment" | "user">(
     "environment"
   );
+  const [isLegacyBrowser, setIsLegacyBrowser] = useState(false);
+
+  // Check for legacy browser on mount
+  useEffect(() => {
+    // Detect if running in a browser with limited capabilities
+    const checkLegacyBrowser = () => {
+      // Check if MediaDevices API is fully supported
+      const hasModernMediaAPI = !!(
+        navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+      );
+
+      // Check for older browsers that might have prefixed APIs
+      const hasLegacyMediaAPI = !!(
+        (
+          navigator as Navigator & {
+            getUserMedia?: () => void;
+            webkitGetUserMedia?: () => void;
+            mozGetUserMedia?: () => void;
+            msGetUserMedia?: () => void;
+          }
+        ).getUserMedia ||
+        (
+          navigator as Navigator & {
+            getUserMedia?: () => void;
+            webkitGetUserMedia?: () => void;
+            mozGetUserMedia?: () => void;
+            msGetUserMedia?: () => void;
+          }
+        ).webkitGetUserMedia ||
+        (
+          navigator as Navigator & {
+            getUserMedia?: () => void;
+            webkitGetUserMedia?: () => void;
+            mozGetUserMedia?: () => void;
+            msGetUserMedia?: () => void;
+          }
+        ).mozGetUserMedia ||
+        (
+          navigator as Navigator & {
+            getUserMedia?: () => void;
+            webkitGetUserMedia?: () => void;
+            mozGetUserMedia?: () => void;
+            msGetUserMedia?: () => void;
+          }
+        ).msGetUserMedia
+      );
+
+      // If we only have legacy support or no support at all
+      setIsLegacyBrowser(
+        !hasModernMediaAPI || (hasLegacyMediaAPI && !hasModernMediaAPI)
+      );
+    };
+
+    checkLegacyBrowser();
+  }, []);
 
   const startCamera = async () => {
     try {
-      // Stop previous stream if exists
+      // Stop previous stream if it exists
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
       }
 
-      // Request camera access with specified facing mode
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: facingMode,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      });
+      let mediaStream: MediaStream;
+
+      try {
+        // First try the standard approach
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: facingMode,
+            // Lower resolution for better compatibility with older devices
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+      } catch (initialError) {
+        console.warn(
+          "Initial camera access failed, trying fallback:",
+          initialError
+        );
+
+        // Fallback to basic video without constraints for older browsers
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+      }
 
       setStream(mediaStream);
 
       if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        videoRef.current.onloadedmetadata = () => {
-          setCameraReady(true);
-        };
+        // Use srcObject if supported, otherwise fallback to src + createObjectURL
+        try {
+          videoRef.current.srcObject = mediaStream;
+        } catch {
+          // For older browsers that don't support srcObject
+          try {
+            // TypeScript doesn't know about createObjectURL on URL object
+            throw new Error(
+              "Your browser doesn't support srcObject for MediaStream."
+            );
+          } catch (urlError) {
+            console.error(
+              "Both modern and legacy video methods failed:",
+              urlError
+            );
+            throw new Error("Your browser doesn't support camera features");
+          }
+        }
+
+        // Setup video loaded event handling with error handling
+        const handleVideoReady = () => setCameraReady(true);
+
+        videoRef.current.onloadedmetadata = handleVideoReady;
+
+        // Fallback if onloadedmetadata doesn't fire (happens in some browsers)
+        setTimeout(() => {
+          if (
+            !isCameraReady &&
+            videoRef.current &&
+            videoRef.current.readyState >= 2
+          ) {
+            setCameraReady(true);
+          }
+        }, 1000);
+
+        // Start playback immediately
+        try {
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((playError) => {
+              console.error("Error playing video:", playError);
+              // Some browsers require user interaction before playing
+              setCameraReady(true); // Still mark as ready so user can interact
+            });
+          }
+        } catch (playError) {
+          console.warn("Play method not supported:", playError);
+          setCameraReady(true); // Consider camera ready anyway
+        }
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
@@ -73,33 +188,80 @@ function Camera({ onCapture, onClose }: CameraProps) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    // Set canvas dimensions to match the video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    try {
+      // Get video dimensions
+      let videoWidth = video.videoWidth;
+      let videoHeight = video.videoHeight;
 
-    // Draw the current video frame on the canvas
-    const context = canvas.getContext("2d");
-    if (context) {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Fallback dimensions if videoWidth/videoHeight are not available
+      if (!videoWidth || !videoHeight) {
+        videoWidth = video.offsetWidth || 640;
+        videoHeight = video.offsetHeight || 480;
+      }
 
-      // Convert canvas to blob and create a File
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
+      // Set canvas dimensions to match the video
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+
+      // Draw the current video frame on the canvas
+      const context = canvas.getContext("2d");
+      if (context) {
+        // Try-catch here because drawImage can fail in some browsers
+        try {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        } catch (drawError) {
+          console.error("Error drawing to canvas:", drawError);
+          setError("Unable to capture image from camera.");
+          return;
+        }
+
+        // Convert canvas to blob and create a File
+        // Use toBlob if available, otherwise fallback to toDataURL
+        if (canvas.toBlob) {
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const file = new File([blob], `photo_${Date.now()}.jpg`, {
+                  type: "image/jpeg",
+                });
+                onCapture(file);
+              }
+            },
+            "image/jpeg",
+            0.9
+          );
+        } else {
+          // Fallback for browsers that don't support toBlob
+          try {
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+            const binStr = atob(dataUrl.split(",")[1]);
+            const arr = new Uint8Array(binStr.length);
+
+            for (let i = 0; i < binStr.length; i++) {
+              arr[i] = binStr.charCodeAt(i);
+            }
+
+            const blob = new Blob([arr], { type: "image/jpeg" });
             const file = new File([blob], `photo_${Date.now()}.jpg`, {
               type: "image/jpeg",
             });
+
             onCapture(file);
+          } catch (dataUrlError) {
+            console.error("Error with canvas data URL:", dataUrlError);
+            setError("Your browser doesn't support image capture.");
           }
-        },
-        "image/jpeg",
-        0.9
-      ); // 0.9 quality
+        }
+      }
+    } catch (error) {
+      console.error("Error in capture process:", error);
+      setError("Failed to capture photo. Please try again.");
     }
   };
 
   return (
     <div className="fixed inset-0 bg-background z-50 flex flex-col">
+      {/* Header - fixed height */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <h2 className="text-lg font-semibold">Take a Photo</h2>
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -120,7 +282,11 @@ function Camera({ onCapture, onClose }: CameraProps) {
         </Button>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
+      {/* Main content - Scrollable with limited height so footer is visible */}
+      <div
+        className="flex-1 flex flex-col items-center justify-center p-4 overflow-y-auto overflow-x-hidden"
+        style={{ maxHeight: "calc(100vh - 132px)" }}
+      >
         {error ? (
           <div className="text-center p-4">
             <div className="text-destructive mb-2">
@@ -148,10 +314,24 @@ function Camera({ onCapture, onClose }: CameraProps) {
           </div>
         ) : (
           <>
-            <div className="w-full max-w-md overflow-hidden rounded-lg relative aspect-[3/4] bg-muted">
+            {isLegacyBrowser && (
+              <div className="w-full bg-amber-50 text-amber-800 p-2 mb-4 text-xs rounded border border-amber-200">
+                Limited functionality detected. Some features may not work
+                optimally in your browser.
+              </div>
+            )}
+
+            {/* Camera preview with responsive sizing */}
+            <div
+              className="w-full max-w-md overflow-hidden rounded-lg relative bg-muted"
+              style={{ aspectRatio: "4/3", maxHeight: "60vh" }}
+            >
               {!isCameraReady && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+                  <div
+                    className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full"
+                    style={{ animation: "spin 1s linear infinite" }}
+                  ></div>
                 </div>
               )}
               <video
@@ -192,7 +372,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
               )}
             </div>
 
-            {/* Capture guidelines */}
+            {/* Capture guidelines - condensed for small screens */}
             {isCameraReady && (
               <div className="mt-4 bg-muted p-3 rounded-md text-sm text-muted-foreground">
                 <ul className="space-y-1">
@@ -257,8 +437,12 @@ function Camera({ onCapture, onClose }: CameraProps) {
         )}
       </div>
 
+      {/* Footer with capture button - Fixed at bottom with definite height */}
       {isCameraReady && !error && (
-        <div className="p-4 flex justify-center">
+        <div
+          className="p-4 flex justify-center items-center border-t border-border bg-background"
+          style={{ minHeight: "84px" }}
+        >
           <div className="w-16 h-16 rounded-full border-4 border-primary flex items-center justify-center">
             <button
               onClick={capturePhoto}
