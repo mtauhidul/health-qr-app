@@ -81,13 +81,16 @@ function Camera({ onCapture, onClose }: CameraProps) {
       let mediaStream: MediaStream;
 
       try {
-        // First try the standard approach
+        // First try the standard approach with PORTRAIT orientation constraints
+        // Changed aspect ratio to favor portrait (tall) orientation (3:4 instead of 4:3)
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: facingMode,
-            // Lower resolution for better compatibility with older devices
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            // Set aspect ratio to 3:4 (portrait) instead of 4:3 (landscape)
+            aspectRatio: { ideal: 0.75 }, // 3:4 ratio is 0.75
+            // Higher height than width for portrait orientation
+            height: { ideal: 1280 },
+            width: { ideal: 960 },
           },
         });
       } catch (initialError) {
@@ -321,10 +324,10 @@ function Camera({ onCapture, onClose }: CameraProps) {
               </div>
             )}
 
-            {/* Camera preview with responsive sizing */}
+            {/* Camera preview with portrait orientation - updated aspect ratio */}
             <div
               className="w-full max-w-md overflow-hidden rounded-lg relative bg-muted"
-              style={{ aspectRatio: "4/3", maxHeight: "60vh" }}
+              style={{ aspectRatio: "3/4", maxHeight: "60vh" }}
             >
               {!isCameraReady && (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -343,6 +346,25 @@ function Camera({ onCapture, onClose }: CameraProps) {
                   isCameraReady ? "opacity-100" : "opacity-0"
                 }`}
               />
+
+              {/* Document capture guide overlay - added for document alignment */}
+              {isCameraReady && (
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="w-full h-full flex items-center justify-center">
+                    {/* Document outline guide */}
+                    <div
+                      className="border-2 border-primary/70 rounded-md w-[85%] h-[90%]"
+                      style={{ aspectRatio: "0.7" }}
+                    >
+                      {/* Corner guides */}
+                      <div className="absolute top-0 left-0 border-t-2 border-l-2 border-primary w-8 h-8"></div>
+                      <div className="absolute top-0 right-0 border-t-2 border-r-2 border-primary w-8 h-8"></div>
+                      <div className="absolute bottom-0 left-0 border-b-2 border-l-2 border-primary w-8 h-8"></div>
+                      <div className="absolute bottom-0 right-0 border-b-2 border-r-2 border-primary w-8 h-8"></div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Camera switch button */}
               {isCameraReady && (
@@ -372,7 +394,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
               )}
             </div>
 
-            {/* Capture guidelines - condensed for small screens */}
+            {/* Document capture guidelines - updated for document photography */}
             {isCameraReady && (
               <div className="mt-4 bg-muted p-3 rounded-md text-sm text-muted-foreground">
                 <ul className="space-y-1">
@@ -391,7 +413,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
                       <polyline points="9 11 12 14 22 4" />
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                     </svg>
-                    Ensure good lighting for clarity
+                    Align document within the frame
                   </li>
                   <li className="flex items-center gap-2">
                     <svg
@@ -408,7 +430,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
                       <polyline points="9 11 12 14 22 4" />
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                     </svg>
-                    Position the form within the frame
+                    Ensure good lighting for readability
                   </li>
                   <li className="flex items-center gap-2">
                     <svg

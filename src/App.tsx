@@ -1,3 +1,5 @@
+// Modified App.tsx with changes
+
 import { Button } from "@/components/ui/button";
 import {
   Camera as CameraIcon,
@@ -27,7 +29,7 @@ function App() {
   // App state
   const [currentStep, setCurrentStep] = useState<Step>("instructions");
   const [images, setImages] = useState<File[]>([]);
-  const [audioNote, setAudioNote] = useState<File | null>(null);
+  const [audioNotes, setAudioNotes] = useState<File[]>([]); // Changed to array for multiple recordings
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadResult, setUploadResult] = useState<{
@@ -97,13 +99,15 @@ function App() {
   // Handle file selection for audio
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setAudioNote(e.target.files[0]);
+      // Add to audio notes array instead of replacing
+      setAudioNotes((prev) => [...prev, e.target.files![0]]);
     }
   };
 
   // Handle voice recording completion
   const handleRecordingComplete = (audioFile: File) => {
-    setAudioNote(audioFile);
+    // Add to array instead of replacing
+    setAudioNotes((prev) => [...prev, audioFile]);
   };
 
   // Handle image capture from camera
@@ -115,6 +119,11 @@ function App() {
   // Remove an image by index
   const removeImage = (indexToRemove: number) => {
     setImages((prev) => prev.filter((_, index) => index !== indexToRemove));
+  };
+
+  // Remove an audio note by index
+  const removeAudioNote = (indexToRemove: number) => {
+    setAudioNotes((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
   // Simulated upload function with progress for testing on legacy browsers
@@ -144,9 +153,9 @@ function App() {
       setCurrentStep("upload");
     } else if (currentStep === "upload") {
       try {
-        // Validate required files
-        if (images.length < 8) {
-          setError("Please upload at least 8 images before proceeding.");
+        // Validate required files - now we just need at least one image
+        if (images.length < 1) {
+          setError("Please upload at least one image before proceeding.");
           return;
         }
 
@@ -162,7 +171,8 @@ function App() {
 
           // Use the real upload function or fallback if needed
           try {
-            result = await uploadToGoogleDrive(images, audioNote);
+            // Update to handle multiple audio notes
+            result = await uploadToGoogleDrive(images, audioNotes);
           } catch (uploadError) {
             console.warn(
               "Standard upload failed, using fallback:",
@@ -195,7 +205,7 @@ function App() {
     } else if (currentStep === "confirmation") {
       // Reset the form and start over
       setImages([]);
-      setAudioNote(null);
+      setAudioNotes([]);
       setUploadResult(null);
       setError(null);
 
@@ -204,10 +214,10 @@ function App() {
     }
   };
 
-  // Validate if we can proceed to the next step
+  // Validate if we can proceed to the next step - now we just need at least one image
   const canProceed = () => {
     if (currentStep === "instructions") return true;
-    if (currentStep === "upload") return images.length >= 8;
+    if (currentStep === "upload") return images.length >= 1;
     return true;
   };
 
@@ -255,7 +265,7 @@ function App() {
                   fontWeight: "bold",
                 }}
               >
-                Upload Images (at least 8):
+                Upload Images:
               </label>
               <input
                 type="file"
@@ -277,7 +287,7 @@ function App() {
                   fontWeight: "bold",
                 }}
               >
-                Upload Audio Note (optional):
+                Upload Audio Notes (optional):
               </label>
               <input
                 type="file"
@@ -289,14 +299,14 @@ function App() {
             <button
               type="button"
               onClick={goToNextStep}
-              disabled={images.length < 8}
+              disabled={images.length < 1}
               style={{
                 padding: "10px 15px",
-                backgroundColor: images.length >= 8 ? "#4a90e2" : "#cccccc",
+                backgroundColor: images.length >= 1 ? "#4a90e2" : "#cccccc",
                 color: "white",
                 border: "none",
                 borderRadius: "4px",
-                cursor: images.length >= 8 ? "pointer" : "not-allowed",
+                cursor: images.length >= 1 ? "pointer" : "not-allowed",
               }}
             >
               Upload Files
@@ -375,7 +385,7 @@ function App() {
                       3
                     </span>
                     <span className="text-sm sm:text-base">
-                      (Optional) Record a short voice memo.
+                      (Optional) Record voice memos for additional context.
                     </span>
                   </li>
                   <li className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-muted/50 rounded-md">
@@ -397,8 +407,7 @@ function App() {
               <div>
                 <h2 className="text-xl font-semibold mb-2 sm:mb-4">Upload</h2>
                 <p className="mb-4 text-sm text-muted-foreground">
-                  Please upload at least 8 images of the form and medication
-                  list.
+                  Please upload images of the form and medication list.
                 </p>
 
                 {/* Image upload section */}
@@ -447,18 +456,19 @@ function App() {
 
                       <div
                         className={`py-3 sm:py-4 border-2 ${
-                          images.length >= 8
+                          images.length >= 1
                             ? "border-primary/30"
                             : "border-border"
                         } rounded-md ${
-                          images.length >= 8 ? "bg-primary/5" : "bg-muted/50"
+                          images.length >= 1 ? "bg-primary/5" : "bg-muted/50"
                         }`}
                       >
                         <div className="flex items-center justify-center gap-2">
                           <span className="text-sm font-medium">
-                            {images.length} / 8+ images
+                            {images.length}{" "}
+                            {images.length === 1 ? "image" : "images"}
                           </span>
-                          {images.length >= 8 && (
+                          {images.length >= 1 && (
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
                               width="16"
@@ -477,9 +487,9 @@ function App() {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {images.length >= 8
+                          {images.length >= 1
                             ? "Ready to upload!"
-                            : "Please add at least 8 images"}
+                            : "Please add at least one image"}
                         </p>
                       </div>
                     </div>
@@ -490,81 +500,90 @@ function App() {
                 <div className="mb-4 sm:mb-6">
                   <h3 className="text-base sm:text-lg font-medium mb-2 flex items-center gap-2">
                     <Mic className="text-primary" size={18} />
-                    Voice Memo (Optional)
+                    Voice Memos (Optional)
                   </h3>
                   <div className="mb-2">
-                    {audioNote ? (
-                      <div className="py-3 sm:py-4 px-3 sm:px-4 flex items-center justify-between bg-muted/30 rounded-md">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-accent rounded-md flex items-center justify-center text-accent-foreground mr-2 sm:mr-3">
-                            <Mic size={18} />
-                          </div>
-                          <div>
-                            <div className="text-xs sm:text-sm font-medium">
-                              {audioNote.name}
-                            </div>
-                            <div className="text-[10px] sm:text-xs text-muted-foreground">
-                              Voice Memo
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setAudioNote(null)}
-                          className="text-xs"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col space-y-3 sm:space-y-4">
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <AudioRecorder
-                              onRecordingComplete={handleRecordingComplete}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 my-2 sm:my-4">
-                          <div className="h-px bg-border flex-grow"></div>
-                          <span className="text-xs font-medium text-muted-foreground px-2">
-                            or
-                          </span>
-                          <div className="h-px bg-border flex-grow"></div>
-                        </div>
-
-                        <div className="flex justify-center w-full">
-                          <Button
-                            variant="outline"
-                            className="py-4 sm:py-8 px-4 sm:px-6 border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors flex items-center gap-2 sm:gap-3 w-full"
-                            onClick={() =>
-                              document.getElementById("audio-upload")?.click()
-                            }
+                    {/* Display multiple audio notes */}
+                    {audioNotes.length > 0 && (
+                      <div className="space-y-2 mb-4">
+                        {audioNotes.map((note, index) => (
+                          <div
+                            key={index}
+                            className="py-3 sm:py-4 px-3 sm:px-4 flex items-center justify-between bg-muted/30 rounded-md"
                           >
-                            <div className="bg-primary/10 p-2 sm:p-3 rounded-full">
-                              <FileUp size={18} className="text-primary" />
+                            <div className="flex items-center">
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-accent rounded-md flex items-center justify-center text-accent-foreground mr-2 sm:mr-3">
+                                <Mic size={18} />
+                              </div>
+                              <div>
+                                <div className="text-xs sm:text-sm font-medium">
+                                  {note.name}
+                                </div>
+                                <div className="text-[10px] sm:text-xs text-muted-foreground">
+                                  Voice Memo {index + 1}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-left">
-                              <p className="text-xs sm:text-sm font-medium mb-0 sm:mb-1">
-                                Upload audio file
-                              </p>
-                              <p className="text-[10px] sm:text-xs text-muted-foreground">
-                                MP3, WAV, or M4A
-                              </p>
-                            </div>
-                          </Button>
-                        </div>
-                        <input
-                          id="audio-upload"
-                          type="file"
-                          accept="audio/*"
-                          className="hidden"
-                          onChange={handleAudioUpload}
-                        />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeAudioNote(index)}
+                              className="text-xs"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
                       </div>
                     )}
+
+                    {/* Always show the recorder to allow for multiple recordings */}
+                    <div className="flex flex-col space-y-3 sm:space-y-4">
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <AudioRecorder
+                            onRecordingComplete={handleRecordingComplete}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 my-2 sm:my-4">
+                        <div className="h-px bg-border flex-grow"></div>
+                        <span className="text-xs font-medium text-muted-foreground px-2">
+                          or
+                        </span>
+                        <div className="h-px bg-border flex-grow"></div>
+                      </div>
+
+                      <div className="flex justify-center w-full">
+                        <Button
+                          variant="outline"
+                          className="py-4 sm:py-8 px-4 sm:px-6 border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors flex items-center gap-2 sm:gap-3 w-full"
+                          onClick={() =>
+                            document.getElementById("audio-upload")?.click()
+                          }
+                        >
+                          <div className="bg-primary/10 p-2 sm:p-3 rounded-full">
+                            <FileUp size={18} className="text-primary" />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-xs sm:text-sm font-medium mb-0 sm:mb-1">
+                              Upload audio file
+                            </p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">
+                              MP3, WAV, or M4A
+                            </p>
+                          </div>
+                        </Button>
+                      </div>
+                      <input
+                        id="audio-upload"
+                        type="file"
+                        accept="audio/*"
+                        className="hidden"
+                        onChange={handleAudioUpload}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -616,8 +635,12 @@ function App() {
                         <div>
                           <p className="font-medium">Uploaded Items</p>
                           <p className="text-[10px] sm:text-xs text-muted-foreground">
-                            {images.length} photos{" "}
-                            {audioNote ? "+ 1 voice memo" : ""}
+                            {images.length}{" "}
+                            {images.length === 1 ? "photo" : "photos"}{" "}
+                            {audioNotes.length > 0 &&
+                              `+ ${audioNotes.length} voice ${
+                                audioNotes.length === 1 ? "memo" : "memos"
+                              }`}
                           </p>
                         </div>
                       </div>

@@ -10,6 +10,7 @@ function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recordingLabel, setRecordingLabel] = useState(""); // Track the name/label for this recording
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -31,6 +32,13 @@ function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
     setRecordingTime(0);
     setAudioUrl(null);
     setError(null);
+
+    // Set a default label for this recording using timestamp
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .substring(0, 19);
+    setRecordingLabel(`Voice Memo ${timestamp}`);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -54,8 +62,8 @@ function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
 
-        // Create a File object from the Blob
-        const file = new File([audioBlob], `voice-memo-${Date.now()}.webm`, {
+        // Create a File object from the Blob with the custom label
+        const file = new File([audioBlob], `${recordingLabel}.webm`, {
           type: "audio/webm",
           lastModified: Date.now(),
         });
@@ -102,6 +110,23 @@ function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       .padStart(2, "0")}`;
   };
 
+  // Handle label change
+  const handleLabelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRecordingLabel(e.target.value);
+  };
+
+  // Start a new recording (reset state)
+  const resetRecording = () => {
+    setAudioUrl(null);
+
+    // Generate a new default label
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .substring(0, 19);
+    setRecordingLabel(`Voice Memo ${timestamp}`);
+  };
+
   if (error) {
     return (
       <div className="rounded-md bg-destructive/10 border border-destructive p-4 text-center">
@@ -144,17 +169,46 @@ function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
         </div>
       ) : audioUrl ? (
         <div className="flex flex-col items-center">
-          <div className="w-full flex gap-2 items-center justify-center mb-4 bg-muted/50 rounded-md p-3">
-            <audio
-              ref={audioRef}
-              src={audioUrl}
-              controls
-              className="w-full max-w-xs"
-            />
+          {/* Show audio player and label input */}
+          <div className="w-full flex flex-col gap-2 items-center justify-center mb-4">
+            <div className="bg-muted/50 rounded-md p-3 w-full">
+              <audio
+                ref={audioRef}
+                src={audioUrl}
+                controls
+                className="w-full max-w-xs"
+              />
+            </div>
+
+            {/* Recording label input */}
+            <div className="w-full">
+              <label
+                htmlFor="recording-name"
+                className="text-xs text-muted-foreground block mb-1"
+              >
+                Recording Name:
+              </label>
+              <input
+                id="recording-name"
+                type="text"
+                value={recordingLabel}
+                onChange={handleLabelChange}
+                className="w-full p-2 text-sm rounded-md border border-border bg-background"
+                placeholder="Enter recording name"
+              />
+            </div>
           </div>
-          <Button variant="secondary" onClick={startRecording}>
-            Record New Memo
-          </Button>
+
+          {/* Buttons to save or reset */}
+          <div className="flex gap-2 w-full">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={resetRecording}
+            >
+              Record New Memo
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col items-center">

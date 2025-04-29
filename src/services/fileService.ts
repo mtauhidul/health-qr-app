@@ -6,7 +6,7 @@ import { getEnv } from "../utils/env";
 // Upload files to Google Drive through backend API
 export async function uploadToGoogleDrive(
   images: File[],
-  audioNote: File | null
+  audioNotes: File[] // Changed from single audioNote to array of audioNotes
 ): Promise<{ success: boolean; folderPath: string }> {
   try {
     // Get API endpoint from environment variable
@@ -29,13 +29,15 @@ export async function uploadToGoogleDrive(
       );
     });
 
-    // Add audio note if provided
-    if (audioNote) {
-      formData.append(
-        "audio",
-        audioNote,
-        `voice-memo${getFileExtension(audioNote.name)}`
-      );
+    // Add all audio notes if provided
+    if (audioNotes.length > 0) {
+      audioNotes.forEach((audio, index) => {
+        formData.append(
+          "audio",
+          audio,
+          `voice-memo-${index + 1}${getFileExtension(audio.name)}`
+        );
+      });
     }
 
     // Send files to backend API
