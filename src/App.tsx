@@ -642,7 +642,7 @@ function App() {
                   Success!
                 </h2>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Your photos have been uploaded successfully. Thank you!
+                  Your files have been uploaded successfully. Thank you!
                 </p>
 
                 {uploadResult && (
