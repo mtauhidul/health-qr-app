@@ -6,8 +6,8 @@ import { getEnv } from "../utils/env";
 // Upload files to Google Drive through backend API
 export async function uploadToGoogleDrive(
   images: File[],
-  audioNotes: File[] // Changed from single audioNote to array of audioNotes
-): Promise<{ success: boolean; folderPath: string }> {
+  audioNotes: File[] // Array of audio files
+): Promise<{ success: boolean; folderPath: string; message?: string }> {
   try {
     // Get API endpoint from environment variable
     const apiEndpoint = getEnv("API_ENDPOINT");
@@ -30,15 +30,13 @@ export async function uploadToGoogleDrive(
     });
 
     // Add all audio notes if provided
-    if (audioNotes.length > 0) {
-      audioNotes.forEach((audio, index) => {
-        formData.append(
-          "audio",
-          audio,
-          `voice-memo-${index + 1}${getFileExtension(audio.name)}`
-        );
-      });
-    }
+    audioNotes.forEach((audioNote, index) => {
+      formData.append(
+        "audio",
+        audioNote,
+        `voice-memo-${index + 1}${getFileExtension(audioNote.name)}`
+      );
+    });
 
     // Send files to backend API
     const response = await fetch(`${apiEndpoint}/api/upload`, {
@@ -46,25 +44,36 @@ export async function uploadToGoogleDrive(
       body: formData,
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
+    // Try to parse response as JSON
+    let result;
+    try {
+      result = await response.json();
+    } catch (jsonError) {
+      console.error("Error parsing response:", jsonError);
       throw new Error(
-        errorData?.message ||
-          `Upload failed with status: ${response.status} ${response.statusText}`
+        `Upload failed with status: ${response.status} ${response.statusText}`
       );
     }
 
-    const result = await response.json();
+    // Check if response has success status
+    if (!response.ok || (result && result.success === false)) {
+      const errorMessage =
+        result?.message ||
+        `Upload failed with status: ${response.status} ${response.statusText}`;
+      console.error("Upload error:", errorMessage);
+      throw new Error(errorMessage);
+    }
 
     return {
       success: true,
+      message: result?.message || "Upload successful",
       folderPath:
-        result.folderPath ||
+        result?.folderPath ||
         `/${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}/`,
     };
   } catch (error) {
     console.error("Error uploading to Google Drive:", error);
-    throw error;
+    throw error; // Re-throw to let the caller handle the error
   }
 }
 

@@ -16,6 +16,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
     "environment"
   );
   const [isLegacyBrowser, setIsLegacyBrowser] = useState(false);
+  const streamInitialized = useRef(false);
 
   // Check for legacy browser on mount
   useEffect(() => {
@@ -71,6 +72,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
     checkLegacyBrowser();
   }, []);
 
+  // Function to start the camera
   const startCamera = async () => {
     try {
       // Stop previous stream if it exists
@@ -78,19 +80,26 @@ function Camera({ onCapture, onClose }: CameraProps) {
         stream.getTracks().forEach((track) => track.stop());
       }
 
+      setCameraReady(false);
+      streamInitialized.current = false;
+
+      if (videoRef.current) {
+        // Clear any previous sources
+        videoRef.current.srcObject = null;
+      }
+
       let mediaStream: MediaStream;
 
       try {
-        // First try the standard approach with PORTRAIT orientation constraints
-        // Changed aspect ratio to favor portrait (tall) orientation (3:4 instead of 4:3)
+        // First try the standard approach with document-focused portrait constraints
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: facingMode,
-            // Set aspect ratio to 3:4 (portrait) instead of 4:3 (landscape)
-            aspectRatio: { ideal: 0.75 }, // 3:4 ratio is 0.75
-            // Higher height than width for portrait orientation
-            height: { ideal: 1280 },
-            width: { ideal: 960 },
+            // Use portrait orientation with A4 document proportions (1:√2 or approx 1:1.414)
+            // This is closer to standard document formats
+            width: { ideal: 1080 },
+            height: { ideal: 1525 }, // Approximately A4 proportions (1080 * 1.414)
+            aspectRatio: { ideal: 1 / 1.414 }, // A4 document ratio (portrait)
           },
         });
       } catch (initialError) {
@@ -99,63 +108,55 @@ function Camera({ onCapture, onClose }: CameraProps) {
           initialError
         );
 
-        // Fallback to basic video without constraints for older browsers
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-        });
+        // Try a more extreme portrait ratio if the A4 proportions fail
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: facingMode,
+              // Even more portrait-oriented (2:3 ratio)
+              aspectRatio: { ideal: 2 / 3 },
+            },
+          });
+        } catch (secondError) {
+          console.warn("Second camera access attempt failed:", secondError);
+
+          // Last resort: basic video access
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+        }
       }
 
       setStream(mediaStream);
+      streamInitialized.current = true;
 
       if (videoRef.current) {
-        // Use srcObject if supported, otherwise fallback to src + createObjectURL
+        // Set srcObject safely
         try {
           videoRef.current.srcObject = mediaStream;
-        } catch {
+
+          // Wait for metadata to load before playing to prevent AbortError
+          videoRef.current.onloadedmetadata = () => {
+            if (videoRef.current) {
+              // Play after metadata is loaded
+              const playPromise = videoRef.current.play();
+              if (playPromise !== undefined) {
+                playPromise
+                  .then(() => {
+                    setCameraReady(true);
+                  })
+                  .catch((playError) => {
+                    console.error("Error playing video:", playError);
+                    // Some browsers require user interaction before playing
+                    setCameraReady(true); // Still mark as ready so user can interact
+                  });
+              }
+            }
+          };
+        } catch (srcError) {
           // For older browsers that don't support srcObject
-          try {
-            // TypeScript doesn't know about createObjectURL on URL object
-            throw new Error(
-              "Your browser doesn't support srcObject for MediaStream."
-            );
-          } catch (urlError) {
-            console.error(
-              "Both modern and legacy video methods failed:",
-              urlError
-            );
-            throw new Error("Your browser doesn't support camera features");
-          }
-        }
-
-        // Setup video loaded event handling with error handling
-        const handleVideoReady = () => setCameraReady(true);
-
-        videoRef.current.onloadedmetadata = handleVideoReady;
-
-        // Fallback if onloadedmetadata doesn't fire (happens in some browsers)
-        setTimeout(() => {
-          if (
-            !isCameraReady &&
-            videoRef.current &&
-            videoRef.current.readyState >= 2
-          ) {
-            setCameraReady(true);
-          }
-        }, 1000);
-
-        // Start playback immediately
-        try {
-          const playPromise = videoRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise.catch((playError) => {
-              console.error("Error playing video:", playError);
-              // Some browsers require user interaction before playing
-              setCameraReady(true); // Still mark as ready so user can interact
-            });
-          }
-        } catch (playError) {
-          console.warn("Play method not supported:", playError);
-          setCameraReady(true); // Consider camera ready anyway
+          console.error("Error setting video source:", srcError);
+          throw new Error("Your browser doesn't support camera features");
         }
       }
     } catch (err) {
@@ -166,7 +167,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
     }
   };
 
-  // Initialize the camera when component mounts
+  // Initialize the camera when component mounts or facingMode changes
   useEffect(() => {
     startCamera();
 
@@ -178,6 +179,15 @@ function Camera({ onCapture, onClose }: CameraProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facingMode]);
+
+  // Make sure we properly cleanup when component unmounts
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [stream]);
 
   // Switch between front and back camera
   const switchCamera = () => {
@@ -324,10 +334,13 @@ function Camera({ onCapture, onClose }: CameraProps) {
               </div>
             )}
 
-            {/* Camera preview with portrait orientation - updated aspect ratio */}
+            {/* Camera preview with document proportions */}
             <div
-              className="w-full max-w-md overflow-hidden rounded-lg relative bg-muted"
-              style={{ aspectRatio: "3/4", maxHeight: "60vh" }}
+              className="w-full max-w-md overflow-hidden rounded-lg relative bg-muted mx-auto"
+              style={{
+                aspectRatio: "0.7071", // 1:1.414 (A4 ratio)
+                maxHeight: "70vh",
+              }}
             >
               {!isCameraReady && (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -347,21 +360,16 @@ function Camera({ onCapture, onClose }: CameraProps) {
                 }`}
               />
 
-              {/* Document capture guide overlay - added for document alignment */}
+              {/* Document frame guide overlay with A4 proportions */}
               {isCameraReady && (
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="w-full h-full flex items-center justify-center">
-                    {/* Document outline guide */}
-                    <div
-                      className="border-2 border-primary/70 rounded-md w-[85%] h-[90%]"
-                      style={{ aspectRatio: "0.7" }}
-                    >
-                      {/* Corner guides */}
-                      <div className="absolute top-0 left-0 border-t-2 border-l-2 border-primary w-8 h-8"></div>
-                      <div className="absolute top-0 right-0 border-t-2 border-r-2 border-primary w-8 h-8"></div>
-                      <div className="absolute bottom-0 left-0 border-b-2 border-l-2 border-primary w-8 h-8"></div>
-                      <div className="absolute bottom-0 right-0 border-b-2 border-r-2 border-primary w-8 h-8"></div>
-                    </div>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  {/* Document outline with A4 proportions */}
+                  <div className="border-2 border-primary w-[85%] h-[92%] rounded-md relative">
+                    {/* Corner markers for better targeting */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-primary rounded-tl-sm"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-primary rounded-tr-sm"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-primary rounded-bl-sm"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-primary rounded-br-sm"></div>
                   </div>
                 </div>
               )}
@@ -394,9 +402,10 @@ function Camera({ onCapture, onClose }: CameraProps) {
               )}
             </div>
 
-            {/* Document capture guidelines - updated for document photography */}
+            {/* Document capture guidelines */}
             {isCameraReady && (
               <div className="mt-4 bg-muted p-3 rounded-md text-sm text-muted-foreground">
+                <h4 className="font-medium mb-2">Document Capture Tips:</h4>
                 <ul className="space-y-1">
                   <li className="flex items-center gap-2">
                     <svg
@@ -413,7 +422,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
                       <polyline points="9 11 12 14 22 4" />
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                     </svg>
-                    Align document within the frame
+                    Align document with frame edges
                   </li>
                   <li className="flex items-center gap-2">
                     <svg
@@ -430,7 +439,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
                       <polyline points="9 11 12 14 22 4" />
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                     </svg>
-                    Ensure good lighting for readability
+                    Use good lighting (avoid shadows)
                   </li>
                   <li className="flex items-center gap-2">
                     <svg
@@ -447,7 +456,7 @@ function Camera({ onCapture, onClose }: CameraProps) {
                       <polyline points="9 11 12 14 22 4" />
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                     </svg>
-                    Hold steady when capturing
+                    Hold camera steady and parallel
                   </li>
                 </ul>
               </div>
